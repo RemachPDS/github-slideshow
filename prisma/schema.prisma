@@ -46,20 +46,23 @@ enum PatternOrigin {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id          String      @id @default(cuid())
-  email       String      @unique
-  name        String?
-  profileType ProfileType @default(founder)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id                 String      @id @default(cuid())
+  email              String      @unique
+  name               String?
+  profileType        ProfileType @default(founder)
+  telegramChatId     String?     @unique
+  telegramLinkToken  String?     @unique
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
-  sessions    CheckinSession[]
-  checkins    Checkin[]
-  insights    Insight[]
-  feedback    Feedback[]
+  sessions         CheckinSession[]
+  checkins         Checkin[]
+  insights         Insight[]
+  feedback         Feedback[]
+  telegramConv     TelegramConversation?
 
-  accounts    Account[]
-  authSessions Session[]
+  accounts         Account[]
+  authSessions     Session[]
 }
 
 // next-auth tables
@@ -101,7 +104,6 @@ model VerificationToken {
 
 // ─── Core domain ─────────────────────────────────────────────────────────────
 
-// Groups multiple days of check-ins into one analysis run
 model CheckinSession {
   id        String   @id @default(cuid())
   userId    String
@@ -155,38 +157,40 @@ model Feedback {
   correctionText String?         @db.Text
   correctionType CorrectionType?
   createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   insight Insight @relation(fields: [insightId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // A pattern may have been born from this correction
   generatedPattern Pattern? @relation("OriginFeedback")
+
+  @@unique([insightId, userId])
 }
 
 // ─── Pattern dataset ─────────────────────────────────────────────────────────
 
 model Pattern {
-  id                String        @id @default(cuid())
-  slug              String        @unique
-  name              String
-  description       String?       @db.Text
-  origin            PatternOrigin @default(founder)
-  originFeedbackId  String?       @unique
-  seenCount         Int           @default(0)
-  yesCount          Int           @default(0)
-  partialCount      Int           @default(0)
-  noCount           Int           @default(0)
-  surprisedCount    Int           @default(0)
-  notSurprisedCount Int           @default(0)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                 String        @id @default(cuid())
+  slug               String        @unique
+  name               String
+  description        String?       @db.Text
+  origin             PatternOrigin @default(founder)
+  originFeedbackId   String?       @unique
+  seenCount          Int           @default(0)
+  yesCount           Int           @default(0)
+  partialCount       Int           @default(0)
+  noCount            Int           @default(0)
+  surprisedCount     Int           @default(0)
+  notSurprisedCount  Int           @default(0)
+  authorMomentSentAt DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   originFeedback Feedback?            @relation("OriginFeedback", fields: [originFeedbackId], references: [id])
   formulations   PatternFormulation[]
   insights       Insight[]
 }
 
-// Same pattern, different surface per user profile
 model PatternFormulation {
   id              String      @id @default(cuid())
   patternId       String
@@ -197,4 +201,20 @@ model PatternFormulation {
   pattern Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
 
   @@unique([patternId, profileType])
+}
+
+// ─── Telegram ─────────────────────────────────────────────────────────────────
+
+// One row per Telegram chat. Tracks conversation state for the guided check-in flow.
+model TelegramConversation {
+  id        String   @id @default(cuid())
+  chatId    String   @unique
+  userId    String?  @unique
+  // idle | day_time | day_surprise | day_preserve | after_day | pending_correction
+  state     String   @default("idle")
+  draft     Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 }

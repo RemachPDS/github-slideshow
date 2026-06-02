@@ -1,5 +1,5 @@
 import Groq from "groq-sdk";
-import type { CheckinInput, InsightOutput } from "./types";
+import type { CheckinInput, InsightOutput, CorrectionType } from "./types";
 
 const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -63,4 +63,37 @@ export async function analyzeCheckins(checkins: CheckinInput[]): Promise<Insight
   const end = raw.lastIndexOf("]");
   if (start === -1 || end === -1) throw new Error("No se encontró JSON válido en la respuesta.");
   return JSON.parse(raw.slice(start, end + 1)) as InsightOutput[];
+}
+
+// Classifies a user correction as defensive / contextual / generative.
+// generative = expands the conceptual vocabulary (most valuable).
+export async function classifyCorrection(
+  insightType: string,
+  insightText: string,
+  correctionText: string
+): Promise<CorrectionType> {
+  const response = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    max_tokens: 10,
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content: `Clasificá esta corrección. Devolvé SOLO una palabra: defensive, contextual o generative.
+
+defensive: protege identidad. "Eso no es así." No mejora el modelo, mejora la formulación.
+contextual: aporta info faltante. "Es situación temporal." Mejora el prompt.
+generative: mejora el modelo conceptual. "No es X vs Y, es A vs B." Expande el vocabulario. La más valiosa.`,
+      },
+      {
+        role: "user",
+        content: `Insight (${insightType}): "${insightText}"\nCorrección: "${correctionText}"`,
+      },
+    ],
+  });
+
+  const raw = (response.choices[0].message.content ?? "").trim().toLowerCase();
+  if (raw === "generative") return "generative";
+  if (raw === "contextual") return "contextual";
+  return "defensive";
 }
