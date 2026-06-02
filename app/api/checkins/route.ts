@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { analyzeCheckins } from "@/lib/anthropic";
+import { analyzeCheckins } from "@/lib/ai";
 import type { CheckinInput } from "@/lib/types";
 
 // POST /api/checkins — create session + checkins + run analysis

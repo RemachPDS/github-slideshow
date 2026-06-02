@@ -1,7 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Groq from "groq-sdk";
 import type { CheckinInput, InsightOutput } from "./types";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const SYSTEM_PROMPT = `Sos un espejo cognitivo, no un resumidor.
 Tu trabajo es detectar lo que el usuario todavía no ve sobre sí mismo — la brecha entre lo que creen que hacen y lo que realmente hacen.
@@ -46,11 +46,11 @@ export async function analyzeCheckins(checkins: CheckinInput[]): Promise<Insight
     )
     .join("\n\n");
 
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+  const response = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
     max_tokens: 1024,
-    system: SYSTEM_PROMPT,
     messages: [
+      { role: "system", content: SYSTEM_PROMPT },
       {
         role: "user",
         content: `Analizá estos ${checkins.length} check-ins y devolvé insights como JSON:\n\n${content}`,
@@ -58,7 +58,7 @@ export async function analyzeCheckins(checkins: CheckinInput[]): Promise<Insight
     ],
   });
 
-  const raw = message.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  const raw = response.choices[0].message.content ?? "";
   const start = raw.indexOf("[");
   const end = raw.lastIndexOf("]");
   if (start === -1 || end === -1) throw new Error("No se encontró JSON válido en la respuesta.");
