@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum ProfileType {
+  founder
+  consultant
+  ghostwriter
+  executive
+}
+
+enum InsightType {
+  attention
+  repetition
+  friction
+  contradiction
+  identity
+  evolution
+  hidden_cost
+}
+
+enum ReactionType {
+  yes
+  partial
+  no
+}
+
+enum CorrectionType {
+  defensive
+  contextual
+  generative
+}
+
+enum PatternOrigin {
+  founder
+  user_generative
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id          String      @id @default(cuid())
+  email       String      @unique
+  name        String?
+  profileType ProfileType @default(founder)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  sessions    CheckinSession[]
+  checkins    Checkin[]
+  insights    Insight[]
+  feedback    Feedback[]
+
+  accounts    Account[]
+  authSessions Session[]
+}
+
+// next-auth tables
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Core domain ─────────────────────────────────────────────────────────────
+
+// Groups multiple days of check-ins into one analysis run
+model CheckinSession {
+  id        String   @id @default(cuid())
+  userId    String
+  createdAt DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkins Checkin[]
+  insights Insight[]
+}
+
+model Checkin {
+  id               String   @id @default(cuid())
+  sessionId        String
+  userId           String
+  day              Int
+  timeResponse     String   @db.Text
+  surpriseResponse String   @db.Text
+  preserveResponse String   @db.Text
+  createdAt        DateTime @default(now())
+
+  session CheckinSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, day])
+}
+
+model Insight {
+  id          String      @id @default(cuid())
+  sessionId   String
+  userId      String
+  type        InsightType
+  pattern     String
+  title       String
+  evidence    String[]
+  insightText String      @db.Text
+  question    String      @db.Text
+  createdAt   DateTime    @default(now())
+
+  session    CheckinSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patternRef Pattern?       @relation(fields: [pattern], references: [slug])
+  feedback   Feedback[]
+}
+
+model Feedback {
+  id             String          @id @default(cuid())
+  insightId      String
+  userId         String
+  surprised      Boolean?
+  reaction       ReactionType?
+  correctionText String?         @db.Text
+  correctionType CorrectionType?
+  createdAt      DateTime        @default(now())
+
+  insight Insight @relation(fields: [insightId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // A pattern may have been born from this correction
+  generatedPattern Pattern? @relation("OriginFeedback")
+}
+
+// ─── Pattern dataset ─────────────────────────────────────────────────────────
+
+model Pattern {
+  id                String        @id @default(cuid())
+  slug              String        @unique
+  name              String
+  description       String?       @db.Text
+  origin            PatternOrigin @default(founder)
+  originFeedbackId  String?       @unique
+  seenCount         Int           @default(0)
+  yesCount          Int           @default(0)
+  partialCount      Int           @default(0)
+  noCount           Int           @default(0)
+  surprisedCount    Int           @default(0)
+  notSurprisedCount Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  originFeedback Feedback?            @relation("OriginFeedback", fields: [originFeedbackId], references: [id])
+  formulations   PatternFormulation[]
+  insights       Insight[]
+}
+
+// Same pattern, different surface per user profile
+model PatternFormulation {
+  id              String      @id @default(cuid())
+  patternId       String
+  profileType     ProfileType
+  formulationText String      @db.Text
+  createdAt       DateTime    @default(now())
+
+  pattern Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+
+  @@unique([patternId, profileType])
+}
